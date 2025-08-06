@@ -41,7 +41,7 @@ import pyfiglet
 from rich.console import Console
 from rich.table import Table
 from rich import box
-from db_connectors import create_connector, execute_query_compat
+from db_connectors import create_connector, execute_query_compat, is_osquery_available
 import termgraph.termgraph as tg
 from map_renderer import render_map
 from matrix_heatmap import render_matrix_heatmap, extract_matrix_data
@@ -61,19 +61,29 @@ def load_config(config_path: str = "cheshire.yaml") -> Dict[str, Any]:
                     'default': {'type': 'duckdb', 'path': default_db}
                 }
                 config['default_database'] = 'default'
-            return config
-    return {
-        "databases": {
-            "default": {"type": "duckdb", "path": ":memory:"}
-        },
-        "default_database": "default",
-        "chart_defaults": {
-            "theme": "matrix",
-            "markers": "braille",
-            "width": None,
-            "height": None
+    else:
+        config = {
+            "databases": {
+                "default": {"type": "duckdb", "path": ":memory:"}
+            },
+            "default_database": "default",
+            "chart_defaults": {
+                "theme": "matrix",
+                "markers": "braille",
+                "width": None,
+                "height": None
+            }
         }
-    }
+    
+    # Auto-detect osquery and add it as a persistent database if available
+    if is_osquery_available():
+        if 'databases' not in config:
+            config['databases'] = {}
+        # Only add if not already configured
+        if 'osquery' not in config['databases']:
+            config['databases']['osquery'] = {'type': 'osquery'}
+    
+    return config
 
 
 def execute_query(query: str, db_identifier: Any, config: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
@@ -997,6 +1007,8 @@ def main(query: Optional[str], chart_type: str, interval: str, db: Optional[str]
                 if db_type == 'duckdb':
                     path = db_config.get('path', '')
                     print(f"  {name:<20} ({db_type}) - {path}")
+                elif db_type == 'osquery':
+                    print(f"  {name:<20} ({db_type}) - System stats via osqueryi")
                 else:
                     print(f"  {name:<20} ({db_type})")
         else:

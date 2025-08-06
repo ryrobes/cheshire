@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """
 Database connectors for cheshire.
-Supports DuckDB, PostgreSQL, MySQL, SQLite (via DuckDB extensions), and ClickHouse.
+Supports DuckDB, PostgreSQL, MySQL, SQLite (via DuckDB extensions), ClickHouse, and osquery.
 """
 
 import duckdb
+import subprocess
+import json
+import shutil
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
@@ -198,6 +201,69 @@ class ClickHouseConnector(DatabaseConnector):
         return [dict(zip(columns, row)) for row in rows]
 
 
+class OsqueryConnector(DatabaseConnector):
+    """osquery connection via osqueryi CLI tool."""
+    
+    def __init__(self):
+        """Initialize osquery connector."""
+        # Check if osqueryi is available
+        self.osqueryi_path = shutil.which('osqueryi')
+        if not self.osqueryi_path:
+            raise RuntimeError(
+                "osqueryi not found in PATH. Please install osquery: "
+                "https://osquery.io/downloads/"
+            )
+    
+    def execute_query(self, query: str) -> List[Dict[str, Any]]:
+        """Execute query using osqueryi CLI and return results."""
+        try:
+            # Execute query via osqueryi with JSON output
+            # Use --json for JSON output format
+            # Use --disable_events to avoid event-based tables that might hang
+            result = subprocess.run(
+                [self.osqueryi_path, '--json', '--disable_events', query],
+                capture_output=True,
+                text=True,
+                timeout=30,  # 30 second timeout
+                check=False  # Don't raise on non-zero exit codes
+            )
+            
+            # Check for errors
+            if result.returncode != 0:
+                # osqueryi returns non-zero for SQL errors
+                error_msg = result.stderr.strip() if result.stderr else "Unknown error"
+                # Try to extract meaningful error from output
+                if "Error:" in result.stdout:
+                    error_msg = result.stdout.split("Error:")[1].strip()
+                raise RuntimeError(f"osquery error: {error_msg}")
+            
+            # Parse JSON output
+            if not result.stdout.strip():
+                return []
+                
+            try:
+                data = json.loads(result.stdout)
+                # osqueryi returns a list of dictionaries
+                if isinstance(data, list):
+                    return data
+                else:
+                    # Unexpected format
+                    return []
+            except json.JSONDecodeError as e:
+                # If JSON parsing fails, try to provide helpful error
+                raise RuntimeError(f"Failed to parse osquery output: {e}")
+                
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("osquery query timed out after 30 seconds")
+        except Exception as e:
+            raise RuntimeError(f"Failed to execute osquery: {e}")
+
+
+def is_osquery_available() -> bool:
+    """Check if osquery is installed and available."""
+    return shutil.which('osqueryi') is not None
+
+
 def create_connector(db_config: Dict[str, Any]) -> DatabaseConnector:
     """
     Factory function to create appropriate database connector.
@@ -266,6 +332,9 @@ def create_connector(db_config: Dict[str, Any]) -> DatabaseConnector:
             verify=db_config.get('verify', True),
             compression=db_config.get('compression', True)
         )
+        
+    elif db_type == 'osquery':
+        return OsqueryConnector()
         
     else:
         raise ValueError(f"Unsupported database type: {db_type}")
