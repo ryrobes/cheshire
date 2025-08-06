@@ -1,0 +1,22 @@
+databases:
+    example:
+        type: duckdb
+        path: "./example.duckdb"
+
+    sqlite_test:
+        type: sqlite
+        path: "./rabbit-sample-data.db"
+
+    boston_crime:
+        type: sqlite
+        path: "./boston-crime-data.db"
+
+default_database: example
+
+chart_defaults:
+  theme: null
+  markers: "braille"
+  width: null
+  height: null
+
+
