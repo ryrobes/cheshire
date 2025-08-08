@@ -33,6 +33,7 @@ import time
 import threading
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any
+import json
 import click
 import duckdb
 import plotext as plt
@@ -45,6 +46,122 @@ from .db_connectors import create_connector, execute_query_compat, is_osquery_av
 import termgraph.termgraph as tg
 from .map_renderer import render_map
 from .matrix_heatmap import render_matrix_heatmap, extract_matrix_data
+
+
+def parse_dimension(value: Optional[str], terminal_size: int) -> Optional[int]:
+    """Parse a dimension value that can be a number or percentage.
+    
+    Args:
+        value: String value like "100", "80%", or None
+        terminal_size: The terminal dimension to use for percentage calculation
+        
+    Returns:
+        Parsed integer value or None
+    """
+    if not value:
+        return None
+    
+    value = value.strip()
+    
+    # Check if it's a percentage
+    if value.endswith('%'):
+        try:
+            percentage = float(value[:-1])
+            if 0 < percentage <= 100:
+                return int(terminal_size * percentage / 100)
+            else:
+                print(f"Warning: Percentage must be between 0 and 100, got {percentage}%", file=sys.stderr)
+                return None
+        except ValueError:
+            print(f"Warning: Invalid percentage value: {value}", file=sys.stderr)
+            return None
+    else:
+        # Try to parse as integer
+        try:
+            size = int(value)
+            if size > 0:
+                return size
+            else:
+                print(f"Warning: Size must be positive, got {size}", file=sys.stderr)
+                return None
+        except ValueError:
+            print(f"Warning: Invalid size value: {value}", file=sys.stderr)
+            return None
+
+
+def detect_and_load_json_stdin():
+    """Check if there's JSON data on stdin and return it if valid."""
+    import select
+    
+    # Check if stdin has data (non-blocking check)
+    if not sys.stdin.isatty():
+        try:
+            # Read stdin data
+            stdin_data = sys.stdin.read().strip()
+            if stdin_data:
+                # Try to parse as JSON
+                json_data = json.loads(stdin_data)
+                
+                # Validate it's an array of objects
+                if isinstance(json_data, list) and len(json_data) > 0:
+                    # Check if it's an array of objects
+                    if all(isinstance(item, dict) for item in json_data):
+                        return json_data
+                    else:
+                        print("Error: JSON input must be an array of objects")
+                        sys.exit(1)
+                elif isinstance(json_data, dict):
+                    # Single object - wrap in array
+                    return [json_data]
+                else:
+                    print("Error: JSON input must be an array of objects or a single object")
+                    sys.exit(1)
+        except json.JSONDecodeError as e:
+            # Not JSON or invalid JSON - return None to proceed normally
+            return None
+    return None
+
+
+def load_json_to_duckdb(json_data, conn):
+    """Load JSON data into a DuckDB table named 'data'."""
+    # Convert JSON data to a format DuckDB can work with
+    # Create a table from the JSON data
+    conn.execute("DROP TABLE IF EXISTS data")
+    
+    # Register the JSON data as a table
+    # DuckDB can read JSON directly
+    import tempfile
+    import os
+    
+    # Write JSON to a temporary file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        json.dump(json_data, f)
+        temp_file = f.name
+    
+    try:
+        # Load JSON file into DuckDB
+        conn.execute(f"""
+            CREATE TABLE data AS 
+            SELECT * FROM read_json_auto('{temp_file}')
+        """)
+        
+        # Get row count for confirmation
+        result = conn.execute("SELECT COUNT(*) FROM data").fetchone()
+        row_count = result[0] if result else 0
+        
+        # Get column info
+        columns = conn.execute("DESCRIBE data").fetchall()
+        col_names = [col[0] for col in columns]
+        
+        print(f"✓ Loaded {row_count} rows with columns: {', '.join(col_names)}", file=sys.stderr)
+        
+        return True
+    finally:
+        # Clean up temp file
+        if os.path.exists(temp_file):
+            os.unlink(temp_file)
+    
+    return False
 
 
 def display_logo():
@@ -640,7 +757,7 @@ def render_chart(chart_type: str, x_values: List, y_values: List,
     # Check if this is a map chart type
     map_types = ['map', 'map_points', 'map_density', 'map_clusters', 'map_heatmap', 'map_blocks', 'map_blocks_heatmap', 'map_braille_heatmap']
     if chart_type in map_types:
-        render_map_chart(chart_type, x_values, y_values, color_values, title, results)
+        render_map_chart(chart_type, x_values, y_values, color_values, title, results, config)
         return
     
     # Check if this is a pie chart  
@@ -937,7 +1054,8 @@ def render_matrix_heatmap_chart(results: Optional[List[Dict[str, Any]]], title: 
 
 def render_map_chart(chart_type: str, lons: List, lats: List,
                      color_values: Optional[List], title: Optional[str],
-                     results: Optional[List[Dict[str, Any]]] = None) -> None:
+                     results: Optional[List[Dict[str, Any]]] = None,
+                     config: Optional[Dict[str, Any]] = None) -> None:
     """Render geographic data as a map."""
     # Clear terminal using ANSI escape sequences
     print('\033[2J\033[H', end='', flush=True)
@@ -958,7 +1076,9 @@ def render_map_chart(chart_type: str, lons: List, lats: List,
     else:
         map_type = 'points'
     
-    # Get terminal dimensions - use full size for maximum resolution
+    # Get dimensions from config or terminal
+    chart_config = config.get("chart_defaults", {}) if config else {}
+    
     try:
         import os
         terminal_width = os.get_terminal_size().columns
@@ -966,6 +1086,10 @@ def render_map_chart(chart_type: str, lons: List, lats: List,
     except:
         terminal_width = 80
         terminal_height = 24
+    
+    # Use config width/height if provided, otherwise use terminal size
+    width = chart_config.get("width") or terminal_width
+    height = chart_config.get("height") or terminal_height
     
     # Extract values if present (for heatmap/density)
     values = None
@@ -981,8 +1105,8 @@ def render_map_chart(chart_type: str, lons: List, lats: List,
         lons=lons,
         values=values,
         colors=color_values if isinstance(color_values, list) and all(isinstance(c, str) for c in color_values) else None,
-        width=terminal_width,
-        height=terminal_height,
+        width=width,
+        height=height,
         title=title,
         map_type=map_type
     )
@@ -1018,7 +1142,7 @@ def parse_interval(interval: str) -> float:
 def refresh_loop(query: str, chart_type: str, db_identifier: Any,
                  interval_seconds: float, config: Dict[str, Any],
                  default_color: Optional[str] = None, title: Optional[str] = None,
-                 font: Optional[str] = None) -> None:
+                 font: Optional[str] = None, json_data: Optional[List[Dict]] = None) -> None:
     """Main refresh loop for updating charts."""
     stop_event = threading.Event()
 
@@ -1028,10 +1152,24 @@ def refresh_loop(query: str, chart_type: str, db_identifier: Any,
     import signal
     signal.signal(signal.SIGINT, lambda s, f: signal_handler())
 
+    # If we have JSON data, load it once before the loop
+    json_conn = None
+    if json_data is not None and db_identifier == ':memory:':
+        json_conn = duckdb.connect(':memory:')
+        if not load_json_to_duckdb(json_data, json_conn):
+            print("Error: Failed to load JSON data into DuckDB")
+            return
+
     try:
         while not stop_event.is_set():
             try:
-                results = execute_query(query, db_identifier, config)
+                if json_conn:
+                    # Use the pre-loaded JSON connection
+                    result = json_conn.execute(query).fetchall()
+                    columns = [desc[0] for desc in json_conn.description]
+                    results = [dict(zip(columns, row)) for row in result]
+                else:
+                    results = execute_query(query, db_identifier, config)
                 x_values, y_values, color_values = extract_chart_data(results)
                 # Pass full results for rich_table
                 render_chart(chart_type, x_values, y_values, color_values, config,
@@ -1050,6 +1188,9 @@ def refresh_loop(query: str, chart_type: str, db_identifier: Any,
     except KeyboardInterrupt:
         print('\033[2J\033[H', end='', flush=True)
         print("\nExiting...")
+    finally:
+        if json_conn:
+            json_conn.close()
 
 
 class CheshireCommand(click.Command):
@@ -1078,8 +1219,11 @@ class CheshireCommand(click.Command):
 @click.option('--csv', help='CSV file to analyze with --sniff or query directly')
 @click.option('--tsv', help='TSV file to analyze with --sniff or query directly')
 @click.option('--parquet', help='Parquet file or folder to analyze with --sniff or query directly')
+@click.option('--json-input', is_flag=True, help='Read JSON array from stdin and load as table "data"')
+@click.option('--width', help='Chart width in characters (e.g., 60) or percentage of terminal (e.g., "80%")')
+@click.option('--height', help='Chart height in lines (e.g., 20) or percentage of terminal (e.g., "50%")')
 @click.option('--version', is_flag=True, is_eager=True, expose_value=False, callback=lambda ctx, param, value: (display_logo(), click.echo("cheshire, version 0.1.0"), ctx.exit()) if value else None, help='Show the version and exit.')
-def main(query: Optional[str], chart_type: str, interval: str, db: Optional[str], database: Optional[str], config: str, color: Optional[str], theme: Optional[str], title: Optional[str], font: Optional[str], list_databases: bool, sniff: bool, csv: Optional[str], tsv: Optional[str], parquet: Optional[str]):
+def main(query: Optional[str], chart_type: str, interval: str, db: Optional[str], database: Optional[str], config: str, color: Optional[str], theme: Optional[str], title: Optional[str], font: Optional[str], list_databases: bool, sniff: bool, csv: Optional[str], tsv: Optional[str], parquet: Optional[str], json_input: bool, width: Optional[str], height: Optional[str]):
     """Terminal-based SQL visualization tool.
 
     QUERY: SQL query to execute (must select 'x', 'y', and optionally 'color' columns)
@@ -1089,6 +1233,10 @@ def main(query: Optional[str], chart_type: str, interval: str, db: Optional[str]
     Chart types include: bar, line, scatter, pie, waffle, map, rich_table, figlet, json
     
     If no query is provided, launches an interactive TUI mode.
+    
+    JSON Input: Pipe JSON data directly or use --json-input flag:
+      echo '[{"name": "Alice", "score": 90}, {"name": "Bob", "score": 85}]' | cheshire "SELECT name as x, score as y FROM data" bar
+      cat data.json | cheshire "SELECT * FROM data WHERE score > 80" json --json-input
     """
     config_data = load_config(config)
 
@@ -1176,8 +1324,19 @@ def main(query: Optional[str], chart_type: str, interval: str, db: Optional[str]
                 sys.exit(1)
         return
 
-    # Launch TUI mode if no query provided
-    if not query:
+    # Check for JSON input from stdin (either with --json-input flag or auto-detect)
+    json_data = None
+    json_loaded = False
+    if json_input or not sys.stdin.isatty():
+        json_data = detect_and_load_json_stdin()
+        if json_data:
+            json_loaded = True
+            # If no query provided, set a default one
+            if not query:
+                query = "SELECT * FROM data LIMIT 100"
+    
+    # Launch TUI mode if no query provided (and no JSON input)
+    if not query and not json_loaded:
         from .tui_mode import main as tui_main
         tui_main()
         return
@@ -1234,6 +1393,10 @@ def main(query: Optional[str], chart_type: str, interval: str, db: Optional[str]
         
         # Use in-memory DuckDB for CSV/TSV queries
         db_identifier = ':memory:'
+    # Handle JSON input data
+    elif json_loaded:
+        # Use in-memory DuckDB for JSON data
+        db_identifier = ':memory:'
     # Determine which database to use
     elif database:
         # Explicit database name from --database flag
@@ -1253,6 +1416,28 @@ def main(query: Optional[str], chart_type: str, interval: str, db: Optional[str]
     # Override theme if specified on command line
     if theme:
         config_data.setdefault("chart_defaults", {})["theme"] = theme
+    
+    # Process width/height arguments
+    if width or height:
+        import os
+        try:
+            terminal_width = os.get_terminal_size().columns
+            terminal_height = os.get_terminal_size().lines
+        except:
+            terminal_width = 80
+            terminal_height = 24
+        
+        # Parse and apply width
+        if width:
+            parsed_width = parse_dimension(width, terminal_width)
+            if parsed_width:
+                config_data.setdefault("chart_defaults", {})["width"] = parsed_width
+        
+        # Parse and apply height
+        if height:
+            parsed_height = parse_dimension(height, terminal_height)
+            if parsed_height:
+                config_data.setdefault("chart_defaults", {})["height"] = parsed_height
 
     # Only check for file existence if using a file-based database
     if isinstance(db_identifier, str) and db_identifier not in config_data.get('databases', {}):
@@ -1294,7 +1479,7 @@ def main(query: Optional[str], chart_type: str, interval: str, db: Optional[str]
 
     try:
         interval_seconds = parse_interval(interval)
-        refresh_loop(query, chart_type, db_identifier, interval_seconds, config_data, default_color, title, font)
+        refresh_loop(query, chart_type, db_identifier, interval_seconds, config_data, default_color, title, font, json_data=json_data if json_loaded else None)
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)

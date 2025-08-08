@@ -12,6 +12,7 @@ Terminal-based SQL visualization tool - turn SQL into TUI charts, maps, tables, 
 - **osquery** - System statistics as SQL (processes, network, hardware)
 - **CSV/TSV Files** - Query delimited files directly with SQL
 - **Parquet Files** - Analyze single files or entire directories
+- **JSON Input** - Pipe JSON arrays directly and query with SQL
 - **Remote Databases** - Connect to external SQL servers
 
 ### Rich Visualizations
@@ -81,6 +82,39 @@ cheshire --sniff --tsv data.tsv
 
 # Query Parquet files or folders
 cheshire "SELECT category as x, AVG(price) as y FROM data GROUP BY category" bar --parquet /path/to/parquet/
+```
+
+### Working with JSON Data
+
+```bash
+# Pipe JSON data directly into Cheshire
+echo '[{"name": "Alice", "score": 90}, {"name": "Bob", "score": 85}]' | \
+  cheshire "SELECT name as x, score as y FROM data" bar
+
+# Read JSON from a file
+cat sales.json | cheshire "SELECT product as x, SUM(amount) as y FROM data GROUP BY product" bar
+
+# Use explicit --json-input flag
+curl -s https://api.example.com/data | \
+  cheshire "SELECT * FROM data WHERE value > 100" json --json-input
+
+# Aggregate JSON data
+echo '[
+  {"category": "A", "value": 10},
+  {"category": "B", "value": 20},
+  {"category": "A", "value": 15}
+]' | cheshire "SELECT category as x, SUM(value) as y FROM data GROUP BY category" pie
+
+# Complex queries on JSON data
+cat events.json | cheshire "
+  SELECT 
+    DATE(timestamp) as x,
+    COUNT(*) as y 
+  FROM data 
+  WHERE status = 'success'
+  GROUP BY DATE(timestamp)
+  ORDER BY x
+" line
 ```
 
 ### System Monitoring with osquery
@@ -212,6 +246,21 @@ cheshire --sniff --csv data.csv
 
 # Analyze Parquet folder
 cheshire --sniff --parquet /data/parquet/
+```
+
+### Chart Size Control
+```bash
+# Set explicit width and height in characters
+cheshire "SELECT ..." bar --width 60 --height 20
+
+# Use percentage of terminal size
+cheshire "SELECT ..." line --width "80%" --height "50%"
+
+# Mix absolute and percentage
+cheshire "SELECT ..." scatter --width "75%" --height 15
+
+# Small inline charts
+cheshire "SELECT ..." bar --width 40 --height 8
 ```
 
 ### Color Customization
