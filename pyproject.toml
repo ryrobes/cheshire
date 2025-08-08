@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "cheshire-sql"
 dynamic = ["version"]
 authors = [
-    {name = "Cheshire Team", email = "contact@example.com"},
+    {name = "Ryan Robitaille", email = "ryan.robitaille@gmail.com"},
 ]
 description = "Terminal-based SQL visualization tool that transforms query results into beautiful ANSI charts"
 readme = "README.md"
@@ -53,10 +53,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/cheshire"
-Repository = "https://github.com/yourusername/cheshire"
-Documentation = "https://github.com/yourusername/cheshire#readme"
-"Bug Reports" = "https://github.com/yourusername/cheshire/issues"
+Homepage = "https://github.com/ryrobes/cheshire"
+Repository = "https://github.com/ryrobes/cheshire"
+Documentation = "https://github.com/ryrobes/cheshire#readme"
+"Bug Reports" = "https://github.com/ryrobes/cheshire/issues"
 
 [project.scripts]
 cheshire = "cheshire.main:main"
