@@ -1287,7 +1287,7 @@ class CheshireCommand(click.Command):
 @click.option('--width', help='Chart width in characters (e.g., 60) or percentage of terminal (e.g., "80%")')
 @click.option('--height', help='Chart height in lines (e.g., 20) or percentage of terminal (e.g., "50%")')
 @click.option('--no-clear', is_flag=True, help='Do not clear terminal before rendering (useful for scripts/logs)')
-@click.option('--version', is_flag=True, is_eager=True, expose_value=False, callback=lambda ctx, param, value: (display_logo(), click.echo("cheshire, version 0.1.0"), ctx.exit()) if value else None, help='Show the version and exit.')
+@click.option('--version', is_flag=True, is_eager=True, expose_value=False, callback=lambda ctx, param, value: (display_logo(), click.echo("cheshire, version 0.1.1"), ctx.exit()) if value else None, help='Show the version and exit.')
 def main(query: Optional[str], chart_type: str, interval: str, db: Optional[str], database: Optional[str], config: str, color: Optional[str], theme: Optional[str], title: Optional[str], font: Optional[str], list_databases: bool, sniff: bool, csv: Optional[str], tsv: Optional[str], parquet: Optional[str], http: Optional[str], json_input: bool, width: Optional[str], height: Optional[str], no_clear: bool):
     """Terminal-based SQL visualization tool.
 
