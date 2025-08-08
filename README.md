@@ -19,6 +19,7 @@ Simple terminal-based SQL visualization tool - turn SQL into ANSI charts, maps, 
 - **Parquet Files** - Analyze single files or entire directories
 - **JSON Input** - Pipe JSON arrays directly and query with SQL
 - **Remote Databases** - Connect to external SQL servers
+- **HTTP(s) DB Files** - Web served Parquet, CSV, TSV
 
 ### ANSI Visualizations
 - **Charts**: Bar, line, scatter, histogram, pie, waffle, and more
@@ -77,6 +78,66 @@ cheshire --sniff --tsv data.tsv
 
 # Query Parquet files or folders
 cheshire "SELECT category as x, AVG(price) as y FROM data GROUP BY category" bar --parquet /path/to/parquet/
+```
+
+### Working with Remote Files (HTTP/HTTPS)
+
+DuckDB can directly query files from HTTP/HTTPS URLs - perfect for demo data and shared datasets:
+
+```bash
+# Query remote Parquet file (most efficient format)
+cheshire "SELECT int_col as x, COUNT(*) as y FROM data GROUP BY int_col ORDER BY int_col LIMIT 20" bar \
+  --http "https://github.com/apache/parquet-testing/raw/master/data/alltypes_plain.parquet"
+
+# Query remote CSV file
+cheshire "SELECT species as x, COUNT(*) as y FROM data GROUP BY species" pie \
+  --http "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv"
+
+# Analyze remote dataset and generate chart suggestions
+cheshire --sniff --http "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/titanic.csv"
+
+# NYC Taxi trip analysis
+cheshire "SELECT payment_type as x, AVG(total_amount) as y FROM data GROUP BY payment_type" bar \
+  --http "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2024-01.parquet" \
+  --title "Average Fare by Payment Type"
+
+# Live COVID-19 data from Our World in Data (CSV)
+cheshire "SELECT location as x, MAX(total_cases) as y FROM data WHERE continent='Europe' GROUP BY location ORDER BY y DESC LIMIT 10" bar \
+  --http "https://covid.ourworldindata.org/data/owid-covid-data.csv"
+```
+
+### Demo Datasets
+
+Here are some publicly available datasets perfect for testing Cheshire:
+
+#### Parquet Files (Recommended - Fast & Efficient)
+- **NYC Taxi Data**: `https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2024-01.parquet`
+- **Apache Test Data**: `https://github.com/apache/parquet-testing/raw/master/data/alltypes_plain.parquet`
+
+#### CSV Files
+- **Iris Dataset**: `https://raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv`
+- **Titanic Dataset**: `https://raw.githubusercontent.com/mwaskom/seaborn-data/master/titanic.csv`
+- **COVID-19 Data**: `https://covid.ourworldindata.org/data/owid-covid-data.csv`
+- **Flights Dataset**: `https://raw.githubusercontent.com/mwaskom/seaborn-data/master/flights.csv`
+- **Tips Dataset**: `https://raw.githubusercontent.com/mwaskom/seaborn-data/master/tips.csv`
+
+#### Example Queries for Demo Data
+
+```bash
+# Titanic survival analysis
+cheshire "SELECT sex as x, AVG(survived)*100 as y FROM data GROUP BY sex" bar \
+  --http "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/titanic.csv" \
+  --title "Titanic Survival Rate by Gender (%)"
+
+# Iris species distribution
+cheshire "SELECT species as x, AVG(petal_length) as y, species as color FROM data GROUP BY species" bar \
+  --http "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv" \
+  --title "Average Petal Length by Species"
+
+# Monthly flight passengers over time
+cheshire "SELECT year || '-' || month as x, passengers as y FROM data ORDER BY year, month" line \
+  --http "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/flights.csv" \
+  --title "Monthly Flight Passengers"
 ```
 
 ### Working with JSON Data

@@ -605,6 +605,26 @@ class DatabaseAnalyzer:
                         'score': 0.9
                     })
                     
+                    # Add colored bar chart variations with other low cardinality dimensions
+                    # Find other low cardinality dimensions to use as color
+                    color_dims = [col for col in dimension_cols 
+                                 if col != dim_col 
+                                 and 2 <= col.cardinality <= 10
+                                 and not col.is_geographic]
+                    
+                    # Create colored bar charts (limit to top 2 color dimensions)
+                    for color_dim in color_dims[:2]:
+                        recommendations.append({
+                            'chart_type': 'bar',
+                            'title': f'{table_name}: {dim_col.name} by {color_dim.name}',
+                            'description': f'Stacked bar chart: {dim_col.name} colored by {color_dim.name}',
+                            'sql': f"SELECT {dim_col.name} as x, COUNT(*) as y, {color_dim.name} as color FROM {table_name} WHERE {dim_col.name} IS NOT NULL AND {color_dim.name} IS NOT NULL GROUP BY 1, 3 ORDER BY 1, 2",
+                            'x_column': dim_col.name,
+                            'y_column': 'count',
+                            'color_column': color_dim.name,
+                            'score': 0.88
+                        })
+                    
                     # Termgraph horizontal bar for counts
                     recommendations.append({
                         'chart_type': 'tg_bar',
@@ -797,6 +817,24 @@ class DatabaseAnalyzer:
                         'score': 0.85
                     })
                     
+                    # Monthly aggregation with color dimension if available
+                    color_dims = [col for col in dimension_cols 
+                                 if 2 <= col.cardinality <= 10
+                                 and not col.is_geographic
+                                 and not col.is_date]
+                    
+                    for color_dim in color_dims[:1]:  # Just one color variation for monthly
+                        recommendations.append({
+                            'chart_type': 'bar',
+                            'title': f'{table_name}: Monthly by {color_dim.name}',
+                            'description': f'Monthly counts colored by {color_dim.name}',
+                            'sql': f"SELECT strftime('%Y-%m', {date_col.name}) as x, COUNT(*) as y, {color_dim.name} as color FROM {table_name} WHERE {color_dim.name} IS NOT NULL GROUP BY 1, 3 ORDER BY 1",
+                            'x_column': 'month',
+                            'y_column': 'count',
+                            'color_column': color_dim.name,
+                            'score': 0.84
+                        })
+                    
                     # Day of week analysis
                     recommendations.append({
                         'chart_type': 'bar',
@@ -873,6 +911,26 @@ class DatabaseAnalyzer:
                                 'y_column': num_col.name,
                                 'score': 0.8
                             })
+                            
+                            # Add colored variations for bar charts with numeric measures
+                            # Find suitable color dimensions (low cardinality, different from x-axis)
+                            color_dims = [col for col in dimension_cols 
+                                        if col != dim_col 
+                                        and 2 <= col.cardinality <= 10
+                                        and not col.is_geographic]
+                            
+                            # Create colored bar charts with SUM (limit to 1 color dimension to avoid explosion)
+                            for color_dim in color_dims[:1]:
+                                recommendations.append({
+                                    'chart_type': 'bar',
+                                    'title': f'{table_name}: {num_col.name} by {dim_col.name} and {color_dim.name}',
+                                    'description': f'Stacked bar: {num_col.name} by {dim_col.name}, colored by {color_dim.name}',
+                                    'sql': f"SELECT {dim_col.name} as x, SUM({num_col.name}) as y, {color_dim.name} as color FROM {table_name} WHERE {dim_col.name} IS NOT NULL AND {color_dim.name} IS NOT NULL AND {num_col.name} IS NOT NULL GROUP BY 1, 3 ORDER BY 1, 2",
+                                    'x_column': dim_col.name,
+                                    'y_column': num_col.name,
+                                    'color_column': color_dim.name,
+                                    'score': 0.81
+                                })
             
             # Histogram for numeric distributions
             for num_col in numeric_cols:
@@ -1097,6 +1155,226 @@ class DatabaseAnalyzer:
             json.dump(output, f, indent=2)
         
         print(f"\n💾 Analysis saved to: {output_path}")
+
+
+def analyze_http_file(url: str, file_type: str = 'csv', output_path: Optional[str] = None) -> None:
+    """Analyze a remote file via HTTP/HTTPS using DuckDB
+    
+    Args:
+        url: HTTP/HTTPS URL to the file
+        file_type: Type of file ('csv', 'tsv', 'parquet', 'json')
+        output_path: Optional custom output path for JSON results
+    """
+    import hashlib
+    
+    # Validate URL
+    if not (url.startswith('http://') or url.startswith('https://')):
+        print(f"Error: URL must start with http:// or https://")
+        return
+    
+    print(f"📡 Analyzing remote {file_type.upper()} file: {url}")
+    
+    # We'll use DuckDB to analyze the remote file
+    conn = duckdb.connect(':memory:')
+    
+    try:
+        # Create the appropriate FROM clause based on file type
+        if file_type == 'parquet':
+            from_clause = f"read_parquet('{url}')"
+        elif file_type == 'csv':
+            from_clause = f"read_csv_auto('{url}')"
+        elif file_type == 'tsv':
+            from_clause = f"read_csv_auto('{url}', delim='\\t')"
+        elif file_type == 'json':
+            from_clause = f"read_json_auto('{url}')"
+        else:
+            from_clause = f"read_csv_auto('{url}')"
+        
+        # Create a table from the remote file
+        conn.execute(f"CREATE TABLE remote_data AS SELECT * FROM {from_clause}")
+        
+        # Get basic info
+        result = conn.execute("SELECT COUNT(*) FROM remote_data").fetchone()
+        row_count = result[0] if result else 0
+        
+        # Get columns
+        columns_info = conn.execute("DESCRIBE remote_data").fetchall()
+        
+        print(f"✓ Remote file loaded: {row_count:,} rows, {len(columns_info)} columns")
+        
+        # Create table analysis
+        table_analysis = TableAnalysis("remote_data")
+        table_analysis.row_count = row_count
+        
+        # Analyze each column
+        for col_info in columns_info:
+            col_name = col_info[0]
+            col_type = col_info[1]
+            
+            column = ColumnAnalysis(col_name, col_type)
+            column.sql_type = col_type
+            column.total_count = row_count
+            
+            # Determine basic type characteristics
+            if 'INT' in col_type or 'DOUBLE' in col_type or 'FLOAT' in col_type or 'DECIMAL' in col_type or 'NUMERIC' in col_type:
+                column.is_numeric = True
+                column.is_measure = True
+                
+                # Get statistics for numeric columns
+                try:
+                    stats = conn.execute(f"""
+                        SELECT 
+                            MIN({col_name}) as min_val,
+                            MAX({col_name}) as max_val,
+                            AVG({col_name}) as avg_val,
+                            COUNT(DISTINCT {col_name}) as cardinality,
+                            COUNT(*) - COUNT({col_name}) as null_count
+                        FROM remote_data
+                    """).fetchone()
+                    
+                    if stats:
+                        column.min_value = stats[0]
+                        column.max_value = stats[1]
+                        column.avg_value = stats[2]
+                        column.cardinality = stats[3]
+                        column.null_count = stats[4]
+                except:
+                    pass
+                    
+            elif 'DATE' in col_type or 'TIME' in col_type:
+                column.is_date = True
+                column.is_dimension = True
+                
+                # Get date range
+                try:
+                    stats = conn.execute(f"""
+                        SELECT 
+                            MIN({col_name}) as min_val,
+                            MAX({col_name}) as max_val,
+                            COUNT(DISTINCT {col_name}) as cardinality,
+                            COUNT(*) - COUNT({col_name}) as null_count
+                        FROM remote_data
+                    """).fetchone()
+                    
+                    if stats:
+                        column.min_value = stats[0]
+                        column.max_value = stats[1]
+                        column.cardinality = stats[2]
+                        column.null_count = stats[3]
+                except:
+                    pass
+                    
+            else:
+                # String/categorical column
+                column.is_dimension = True
+                
+                # Get cardinality
+                try:
+                    stats = conn.execute(f"""
+                        SELECT 
+                            COUNT(DISTINCT {col_name}) as cardinality,
+                            COUNT(*) - COUNT({col_name}) as null_count
+                        FROM remote_data
+                    """).fetchone()
+                    
+                    if stats:
+                        column.cardinality = stats[0]
+                        column.null_count = stats[1]
+                except:
+                    pass
+            
+            # Check for geographic columns
+            col_lower = col_name.lower()
+            if any(lat in col_lower for lat in ['lat', 'latitude']):
+                column.is_latitude = True
+                column.is_geographic = True
+            elif any(lon in col_lower for lon in ['lon', 'long', 'longitude']):
+                column.is_longitude = True
+                column.is_geographic = True
+                
+            # Get sample values
+            try:
+                samples = conn.execute(f"SELECT DISTINCT {col_name} FROM remote_data LIMIT 5").fetchall()
+                column.sample_values = [s[0] for s in samples if s[0] is not None]
+            except:
+                pass
+                
+            table_analysis.columns[col_name] = column
+        
+        # Get sample data for the table
+        sample_query = f"SELECT * FROM remote_data LIMIT 5"
+        sample_rows = conn.execute(sample_query).fetchall()
+        table_analysis.sample_data = [
+            dict(zip([c[0] for c in columns_info], row))
+            for row in sample_rows
+        ]
+        
+        # Generate recommendations using the same logic as CSV/TSV
+        print("\n📊 Generating chart recommendations...")
+        
+        # Build the FROM clause that will be used in all SQL queries
+        if file_type == 'parquet':
+            table_ref = f"read_parquet('{url}')"
+        elif file_type == 'csv':
+            table_ref = f"read_csv_auto('{url}')"
+        elif file_type == 'tsv':
+            table_ref = f"read_csv_auto('{url}', delim='\\t')"
+        elif file_type == 'json':
+            table_ref = f"read_json_auto('{url}')"
+        else:
+            table_ref = f"read_csv_auto('{url}')"
+        
+        # Create analyzer just for recommendations
+        analyzer = DatabaseAnalyzer(url, 'http', 'remote_file')
+        analyzer.analysis_results[table_ref] = table_analysis
+        
+        # Temporarily override the table name for recommendation generation
+        original_table_name = table_analysis.name
+        table_analysis.name = table_ref
+        
+        analyzer._generate_recommendations()
+        
+        # Restore original name for display
+        table_analysis.name = original_table_name
+        
+        # Save results
+        if not output_path:
+            # Generate filename from URL hash
+            url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+            output_path = f".cheshire_analysis_http_{url_hash}.json"
+        
+        # Prepare output data
+        db_info = {
+            'type': file_type,
+            'url': url,
+            'analyzed_at': datetime.now().isoformat(),
+            'table_ref': table_ref  # Store the actual DuckDB function to use
+        }
+        
+        # Make sure all recommendations have the correct table reference
+        for rec in table_analysis.recommended_charts:
+            # Replace any occurrence of the table_ref as table name with 'data' for display
+            if 'sql' in rec:
+                rec['original_sql'] = rec['sql']  # Keep original for reference
+                # No need to modify - the SQL already has the correct read function
+        
+        output = {
+            'database': db_info,
+            'tables': {'remote_data': table_analysis.to_dict()}
+        }
+        
+        with open(output_path, 'w') as f:
+            json.dump(output, f, indent=2)
+        
+        print(f"\n💾 Analysis saved to: {output_path}")
+        print(f"🚀 Run 'cheshire' to browse recommendations in the TUI")
+        
+    except Exception as e:
+        print(f"Error analyzing remote file: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        conn.close()
 
 
 def analyze_database(db_identifier: Any, db_type: str = 'duckdb', output_path: Optional[str] = None, db_name: Optional[str] = None) -> None:

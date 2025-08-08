@@ -351,8 +351,16 @@ def get_color_for_series(index: int, total: int) -> str:
 def render_rich_table(results: List[Dict[str, Any]], title: Optional[str] = None,
                       table_color: Optional[str] = None) -> None:
     """Render query results as a Rich table with all columns."""
+    # Get terminal width to use full available space
+    try:
+        import os
+        terminal_width = os.get_terminal_size().columns
+    except:
+        terminal_width = None  # Let Rich auto-detect
+    
     # Force terminal colors even when not running in a TTY (e.g., embedded terminals)
-    console = Console(force_terminal=True, color_system="standard")
+    # Set width to terminal width to use full available space
+    console = Console(force_terminal=True, color_system="standard", width=terminal_width)
 
     # Clear terminal using ANSI escape sequences (preserves color state)
     print('\033[2J\033[H', end='', flush=True)
@@ -362,7 +370,15 @@ def render_rich_table(results: List[Dict[str, Any]], title: Optional[str] = None
         return
 
     # Create table with title
-    table = Table(title=title if title else "Query Results", box=box.ROUNDED)
+    # expand=True allows the table to use full terminal width
+    # show_lines=True adds lines between rows for better readability
+    table = Table(
+        title=title if title else "Query Results", 
+        box=box.ROUNDED,
+        expand=True,  # Use full terminal width
+        show_lines=False,  # Keep it clean without lines between rows
+        min_width=terminal_width  # Ensure it uses available space
+    )
 
     # Determine color style
     style = None
@@ -374,8 +390,8 @@ def render_rich_table(results: List[Dict[str, Any]], title: Optional[str] = None
         elif isinstance(table_color, str) and table_color != 'default':
             style = table_color
 
-    # Add index column
-    table.add_column("#", style="dim", width=4)
+    # Add index column (no fixed width, let Rich optimize)
+    table.add_column("#", style="dim", no_wrap=True)
 
     # Add all columns from the first result row
     columns = list(results[0].keys())
@@ -391,7 +407,10 @@ def render_rich_table(results: List[Dict[str, Any]], title: Optional[str] = None
                 col_style = "yellow"
             else:
                 col_style = "white"
-        table.add_column(str(col), style=col_style, overflow="fold")
+        # Don't set explicit width - let Rich calculate optimal column widths
+        # overflow="ellipsis" will truncate with ... if needed
+        # ratio=1 gives equal weight to all columns for width calculation
+        table.add_column(str(col), style=col_style, overflow="ellipsis", ratio=1)
 
     # Add rows
     for i, row in enumerate(results):
@@ -1254,11 +1273,12 @@ class CheshireCommand(click.Command):
 @click.option('--csv', help='CSV file to analyze with --sniff or query directly')
 @click.option('--tsv', help='TSV file to analyze with --sniff or query directly')
 @click.option('--parquet', help='Parquet file or folder to analyze with --sniff or query directly')
+@click.option('--http', help='HTTP/HTTPS URL to a Parquet, CSV, or JSON file to query directly')
 @click.option('--json-input', is_flag=True, help='Read JSON array from stdin and load as table "data"')
 @click.option('--width', help='Chart width in characters (e.g., 60) or percentage of terminal (e.g., "80%")')
 @click.option('--height', help='Chart height in lines (e.g., 20) or percentage of terminal (e.g., "50%")')
 @click.option('--version', is_flag=True, is_eager=True, expose_value=False, callback=lambda ctx, param, value: (display_logo(), click.echo("cheshire, version 0.1.0"), ctx.exit()) if value else None, help='Show the version and exit.')
-def main(query: Optional[str], chart_type: str, interval: str, db: Optional[str], database: Optional[str], config: str, color: Optional[str], theme: Optional[str], title: Optional[str], font: Optional[str], list_databases: bool, sniff: bool, csv: Optional[str], tsv: Optional[str], parquet: Optional[str], json_input: bool, width: Optional[str], height: Optional[str]):
+def main(query: Optional[str], chart_type: str, interval: str, db: Optional[str], database: Optional[str], config: str, color: Optional[str], theme: Optional[str], title: Optional[str], font: Optional[str], list_databases: bool, sniff: bool, csv: Optional[str], tsv: Optional[str], parquet: Optional[str], http: Optional[str], json_input: bool, width: Optional[str], height: Optional[str]):
     """Terminal-based SQL visualization tool.
 
     QUERY: SQL query to execute (must select 'x', 'y', and optionally 'color' columns)
@@ -1293,9 +1313,37 @@ def main(query: Optional[str], chart_type: str, interval: str, db: Optional[str]
         return
 
     # Handle --sniff flag for database analysis or file analysis
-    if sniff or (csv and not query) or (tsv and not query) or (parquet and not query):
+    if sniff or (csv and not query) or (tsv and not query) or (parquet and not query) or (http and not query):
+        # Check if analyzing HTTP URL
+        if http:
+            url = http.strip()
+            
+            # Validate URL
+            if not (url.startswith('http://') or url.startswith('https://')):
+                print(f"Error: URL must start with http:// or https://")
+                sys.exit(1)
+            
+            print(f"🔍 Analyzing remote file: {url}")
+            
+            # Detect file type from URL
+            url_lower = url.lower()
+            if '.parquet' in url_lower:
+                file_type = 'parquet'
+            elif '.csv' in url_lower:
+                file_type = 'csv'  
+            elif '.tsv' in url_lower or '.txt' in url_lower:
+                file_type = 'tsv'
+            elif '.json' in url_lower:
+                file_type = 'json'
+            else:
+                file_type = 'csv'  # Default
+            
+            # Analyze using DuckDB's ability to read HTTP URLs
+            from .database_analyzer import analyze_http_file
+            analyze_http_file(url, file_type)
+            return
         # Check if analyzing CSV/TSV/Parquet file
-        if csv or tsv or parquet:
+        elif csv or tsv or parquet:
             if parquet:
                 file_path = parquet
                 file_type = 'parquet'
@@ -1376,8 +1424,53 @@ def main(query: Optional[str], chart_type: str, interval: str, db: Optional[str]
         tui_main()
         return
 
+    # Handle HTTP URLs for remote files
+    if http:
+        url = http.strip()
+        
+        # Validate URL
+        if not (url.startswith('http://') or url.startswith('https://')):
+            print(f"Error: URL must start with http:// or https://")
+            sys.exit(1)
+        
+        # Detect file type from URL
+        url_lower = url.lower()
+        if '.parquet' in url_lower:
+            from_clause = f"read_parquet('{url}')"
+            file_type = 'parquet'
+        elif '.csv' in url_lower:
+            from_clause = f"read_csv_auto('{url}')"
+            file_type = 'csv'
+        elif '.tsv' in url_lower or '.txt' in url_lower:
+            from_clause = f"read_csv_auto('{url}', delim='\\t')"
+            file_type = 'tsv'
+        elif '.json' in url_lower:
+            from_clause = f"read_json_auto('{url}')"
+            file_type = 'json'
+        else:
+            # Try to guess based on content or default to CSV
+            print(f"Warning: Could not determine file type from URL, assuming CSV")
+            from_clause = f"read_csv_auto('{url}')"
+            file_type = 'csv'
+        
+        print(f"📡 Accessing remote {file_type.upper()} file: {url}")
+        
+        # Replace table references in query with the read function
+        if query:
+            import re
+            # Replace FROM table_name with FROM read_function
+            query = re.sub(r'\bFROM\s+(\w+)', f'FROM {from_clause}', query, flags=re.IGNORECASE)
+            # If no FROM clause found, assume they want to query the file directly
+            if 'from' not in query.lower():
+                query = f"SELECT * FROM {from_clause} LIMIT 100"
+        else:
+            # If no query provided, set a default one
+            query = f"SELECT * FROM {from_clause} LIMIT 100"
+        
+        # Use in-memory DuckDB for HTTP queries
+        db_identifier = ':memory:'
     # Handle CSV/TSV/Parquet files for direct querying
-    if csv or tsv or parquet:
+    elif csv or tsv or parquet:
         if parquet:
             file_path = parquet
             
@@ -1516,7 +1609,68 @@ def main(query: Optional[str], chart_type: str, interval: str, db: Optional[str]
         interval_seconds = parse_interval(interval)
         refresh_loop(query, chart_type, db_identifier, interval_seconds, config_data, default_color, title, font, json_data=json_data if json_loaded else None)
     except Exception as e:
-        print(f"Error: {e}")
+        error_str = str(e)
+        print(f"Error: {error_str}")
+        
+        # If it's a column not found error, try to show available columns
+        if "not found in FROM clause" in error_str or "Binder Error" in error_str:
+            print("\n💡 Tip: Use --sniff to analyze the data and see available columns:")
+            
+            # Build the appropriate sniff command based on what was used
+            if http:
+                print(f"  cheshire --sniff --http \"{http}\"")
+            elif csv:
+                print(f"  cheshire --sniff --csv \"{csv}\"")
+            elif tsv:
+                print(f"  cheshire --sniff --tsv \"{tsv}\"")
+            elif parquet:
+                print(f"  cheshire --sniff --parquet \"{parquet}\"")
+            else:
+                print(f"  cheshire --sniff --db \"{db_identifier}\"")
+            
+            # Try to show available columns if we can
+            if http or csv or tsv or parquet:
+                try:
+                    print("\nAvailable columns:")
+                    conn = duckdb.connect(':memory:')
+                    
+                    # Build the appropriate FROM clause
+                    if http:
+                        url = http.strip()
+                        url_lower = url.lower()
+                        if '.parquet' in url_lower:
+                            from_clause = f"read_parquet('{url}')"
+                        elif '.csv' in url_lower:
+                            from_clause = f"read_csv_auto('{url}')"
+                        elif '.tsv' in url_lower or '.txt' in url_lower:
+                            from_clause = f"read_csv_auto('{url}', delim='\\t')"
+                        elif '.json' in url_lower:
+                            from_clause = f"read_json_auto('{url}')"
+                        else:
+                            from_clause = f"read_csv_auto('{url}')"
+                    elif parquet:
+                        if Path(parquet).is_dir():
+                            abs_path = str(Path(parquet).resolve())
+                            from_clause = f"read_parquet('{abs_path}/*.parquet')"
+                        else:
+                            abs_path = str(Path(parquet).resolve())
+                            from_clause = f"read_parquet('{abs_path}')"
+                    elif csv:
+                        abs_path = str(Path(csv).resolve())
+                        from_clause = f"read_csv_auto('{abs_path}')"
+                    elif tsv:
+                        abs_path = str(Path(tsv).resolve())
+                        from_clause = f"read_csv_auto('{abs_path}', delim='\\t')"
+                    
+                    # Get column info
+                    columns = conn.execute(f"DESCRIBE SELECT * FROM {from_clause} LIMIT 1").fetchall()
+                    for col in columns:
+                        print(f"  - {col[0]} ({col[1]})")
+                    
+                    conn.close()
+                except:
+                    pass  # Silently fail if we can't get columns
+        
         sys.exit(1)
 
 

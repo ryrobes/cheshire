@@ -500,7 +500,8 @@ ORDER BY date"""
         """Check if analysis files exist and notify user."""
         analysis_files = glob.glob('.cheshire_analysis_*.json')
         if analysis_files:
-            self.notify(f"Found {len(analysis_files)} analysis file(s). Check Suggestions tab!", severity="info")
+            # Silenced: self.notify(f"Found {len(analysis_files)} analysis file(s). Check Suggestions tab!", severity="info")
+            pass
     
     def action_run_query(self) -> None:
         """Run the SQL query and display the chart."""
@@ -601,8 +602,35 @@ ORDER BY date"""
             if font:
                 cmd += f" --font '{font}'"
             
-        # Specify database
-        if db_selection == "__custom__" or db_selection not in self.databases:
+        # Specify database or HTTP URL
+        if db_selection == "__custom__":
+            # Check if it's an HTTP URL
+            if db_path.startswith('http://') or db_path.startswith('https://'):
+                # Extract URL from the query if it contains read_parquet/read_csv_auto
+                # The query already has the URL embedded, so we need to extract it
+                import re
+                url_match = re.search(r"read_(?:parquet|csv_auto|json_auto)\('(https?://[^']+)'\)", query)
+                if url_match:
+                    url = url_match.group(1)
+                    # For HTTP URLs, we need to modify the query to use 'data' as table alias
+                    # and use --http flag with the URL
+                    query_modified = query.replace(url_match.group(0), 'data')
+                    # Update the command with modified query
+                    cmd = f"cheshire '{query_modified}' {chart_type} {interval}"
+                    if title:
+                        cmd += f" --title '{title}'"
+                    if color:
+                        cmd += f" --color '{color}'"
+                    if chart_type == 'figlet' and font:
+                        cmd += f" --font '{font}'"
+                    cmd += f" --http '{url}'"
+                else:
+                    # Fallback if we can't extract URL
+                    cmd += f" --db ':memory:'"
+            else:
+                # Use --db for file paths
+                cmd += f" --db '{db_path}'"
+        elif db_selection not in self.databases:
             # Use --db for file paths
             cmd += f" --db '{db_path}'"
         else:
@@ -648,7 +676,13 @@ ORDER BY date"""
             db_selection = db_selector.value
             if db_selection == "__custom__":
                 db_path = db_input.value.strip()
-                db_identifier = db_path
+                # Check if it's an HTTP URL
+                if db_path.startswith('http://') or db_path.startswith('https://'):
+                    # For HTTP URLs, use in-memory DuckDB
+                    db_identifier = ':memory:'
+                    # The query should already contain the read_parquet/read_csv_auto function
+                else:
+                    db_identifier = db_path
             else:
                 # Use named database config
                 db_identifier = self.databases.get(db_selection, db_selection)
@@ -693,8 +727,8 @@ ORDER BY date"""
                 
             # Check database validity
             if db_selection == "__custom__":
-                # Check if database file exists (only for file paths)
-                if db_path and db_path != ':memory:':
+                # Check if database file exists (only for file paths, not HTTP URLs)
+                if db_path and db_path != ':memory:' and not (db_path.startswith('http://') or db_path.startswith('https://')):
                     # Check if query is reading from external sources
                     query_lower = query.lower()
                     is_external_read = any(keyword in query_lower for keyword in [
@@ -755,7 +789,7 @@ ORDER BY date"""
                     except pyfiglet.FontNotFound:
                         # Fall back to small font if specified font not found
                         figlet_text = pyfiglet.figlet_format(value, font="small")
-                        self.notify(f"Font '{font}' not found, using 'small' instead", severity="warning")
+                        # Silenced: self.notify(f"Font '{font}' not found, using 'small' instead", severity="warning")
                 else:
                     # Default font selection based on value length
                     if len(str(value)) > 10:
@@ -1184,15 +1218,16 @@ ORDER BY date"""
                 for cmd in ["pbcopy", "xclip -selection clipboard", "xsel --clipboard --input"]:
                     try:
                         subprocess.run(cmd.split(), input=command_to_copy.encode(), check=True)
-                        self.notify(f"{style_name.capitalize()} command copied to clipboard!")
+                        # Silenced: self.notify(f"{style_name.capitalize()} command copied to clipboard!")
                         return
                     except:
                         continue
-                self.notify("Could not copy to clipboard - command displayed above", severity="warning")
+                # Silenced: self.notify("Could not copy to clipboard - command displayed above", severity="warning")
             except Exception as e:
                 self.notify(f"Copy failed: {str(e)}", severity="error")
         else:
-            self.notify("No command to copy - run a query first", severity="warning")
+            # Silenced: self.notify("No command to copy - run a query first", severity="warning")
+            pass
     
     def action_copy_command(self) -> None:
         """Copy the CLI command to clipboard (keyboard shortcut)."""
@@ -1223,7 +1258,7 @@ ORDER BY date"""
         duckdb_files = sorted(set(duckdb_files))
         
         if not duckdb_files:
-            self.notify("No DuckDB files found in current directory", severity="warning")
+            # Silenced: self.notify("No DuckDB files found in current directory", severity="warning")
             return
         
         # Create a simple list of options
@@ -1234,7 +1269,7 @@ ORDER BY date"""
         if len(duckdb_files) > 10:
             options_text += f"... and {len(duckdb_files) - 10} more\n"
         
-        self.notify(options_text)
+        # Silenced: self.notify(options_text)
         
         # Set the first one found and switch to custom mode
         if duckdb_files:
@@ -1248,7 +1283,7 @@ ORDER BY date"""
             
             # Set the path
             db_input.value = duckdb_files[0]
-            self.notify(f"Selected: {duckdb_files[0]}")
+            # Silenced: self.notify(f"Selected: {duckdb_files[0]}")
     
     
     def load_database_schema(self) -> None:
@@ -1427,8 +1462,18 @@ ORDER BY date"""
                     # Determine database identifier for switching
                     db_identifier = None
                     db_name_display = "Unknown"
+                    is_http = False
                     
-                    if 'name' in db_info:
+                    # Check if this is an HTTP-based analysis
+                    if 'url' in db_info:
+                        # This is an HTTP URL analysis
+                        db_identifier = db_info['url']
+                        is_http = True
+                        # Show shortened URL for display
+                        from urllib.parse import urlparse
+                        parsed = urlparse(db_info['url'])
+                        db_name_display = f"📡 {parsed.netloc}/{Path(parsed.path).name}"
+                    elif 'name' in db_info:
                         # Named database from config
                         db_identifier = db_info['name']
                         db_name_display = db_info['name']
@@ -1444,7 +1489,8 @@ ORDER BY date"""
                     db_node = tree.root.add(f"🗄️ {db_name_display}", data={
                         "type": "database",
                         "db_identifier": db_identifier,
-                        "db_info": db_info
+                        "db_info": db_info,
+                        "is_http": is_http
                     })
                     
                     # Process tables and their recommendations
@@ -1512,15 +1558,32 @@ ORDER BY date"""
                                     data={"type": "chart_type", "chart_type": chart_type}
                                 )
                                 
-                                # Add individual chart recommendations (limit to top 5 per type)
-                                for i, rec in enumerate(sorted(recs, key=lambda x: x.get('score', 0), reverse=True)[:5]):
+                                # Add individual chart recommendations (sorted by score)
+                                for i, rec in enumerate(sorted(recs, key=lambda x: x.get('score', 0), reverse=True)):
                                     title = rec.get('title', 'Untitled')
+                                    description = rec.get('description', '')
                                     score = rec.get('score', 0)
                                     total_suggestions += 1
                                     
-                                    # Simplify the title for display
-                                    simple_title = title.replace(f'{table_name} ', '').replace(' over time', '')
-                                    label = f"{simple_title} [{score:.1f}]"
+                                    # For HTTP sources, remove the long table reference from title
+                                    if is_http and 'read_' in title:
+                                        # Remove the read_csv_auto/read_parquet function reference
+                                        import re
+                                        title = re.sub(r"read_\w+\([^)]+\):\s*", "", title)
+                                        title = re.sub(r"read_\w+\([^)]+\)", "Data", title)
+                                    
+                                    # Simplify the title for display - remove table name prefix
+                                    simple_title = title
+                                    for prefix in [f'{table_name}: ', f'{table_name} ', 'remote_data: ', 'remote_data ']:
+                                        if simple_title.startswith(prefix):
+                                            simple_title = simple_title[len(prefix):]
+                                            break
+                                    
+                                    # Use description if available, otherwise use simplified title
+                                    if description:
+                                        label = f"{description} [{score:.1f}]"
+                                    else:
+                                        label = f"{simple_title} [{score:.1f}]"
                                     
                                     # Store the full recommendation data including database info
                                     chart_type_node.add_leaf(label, data={
@@ -1530,12 +1593,13 @@ ORDER BY date"""
                                         "title": title,
                                         "table": table_name,
                                         "db_identifier": db_identifier,
-                                        "db_info": db_info
+                                        "db_info": db_info,
+                                        "is_http": is_http
                                     })
                 
                 except Exception as e:
-                    # Skip files that fail to load
-                    self.notify(f"Error loading {analysis_file}: {str(e)}", severity="warning")
+                    # Skip files that fail to load silently
+                    # Only show actual errors, not warnings
                     continue
             
             # Expand only to database level by default (to keep it manageable)
@@ -1550,7 +1614,7 @@ ORDER BY date"""
             # Also refresh the app to ensure layout updates
             self.refresh()
             
-            self.notify(f"Loaded {total_suggestions} suggestions from {len(analysis_files)} databases", severity="success")
+            # Silenced: self.notify(f"Loaded {total_suggestions} suggestions from {len(analysis_files)} databases", severity="success")
             
         except Exception as e:
             tree = self.query_one("#suggestions-tree", Tree)
@@ -1591,12 +1655,12 @@ ORDER BY date"""
                 if db_identifier in self.databases:
                     # Select the named database
                     db_selector.value = db_identifier
-                    self.notify(f"Switched to database: {db_identifier}", severity="info")
+                    # Silenced: self.notify(f"Switched to database: {db_identifier}", severity="info")
                 else:
                     # It's a custom path
                     db_selector.value = "__custom__"
                     db_input.value = db_identifier
-                    self.notify(f"Switched to database: {Path(db_identifier).name}", severity="info")
+                    # Silenced: self.notify(f"Switched to database: {Path(db_identifier).name}", severity="info")
                 
                 # Reload the schema for the new database
                 # Skip schema loading for CSV/TSV files (they don't have schemas)
@@ -1619,7 +1683,7 @@ ORDER BY date"""
             # tabbed_content.active = "controls-tab"
             
             # Show notification
-            self.notify(f"Loaded suggestion: {node.data.get('title', 'Chart')}", severity="success")
+            # Silenced: self.notify(f"Loaded suggestion: {node.data.get('title', 'Chart')}", severity="success")
             
             # Auto-run the query
             self.run_query()
