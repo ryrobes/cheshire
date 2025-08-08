@@ -7,6 +7,8 @@ __pycache__/
 *.so
 
 test_venv/
+test_env/
+test_venv2/
 
 # Distribution / packaging
 .Python
