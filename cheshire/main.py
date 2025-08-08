@@ -910,6 +910,41 @@ def render_chart(chart_type: str, x_values: List, y_values: List,
         plt.bar(x_values, y_values)
         plt.show()
         return
+    elif color_values and chart_type == 'bar':
+        # For bar charts with color grouping, create a stacked bar chart
+        groups = group_by_color(x_values, y_values, color_values)
+        
+        # Get all unique x values (maintaining order)
+        unique_x = []
+        seen = set()
+        for x in x_values:
+            if x not in seen:
+                unique_x.append(x)
+                seen.add(x)
+        
+        # Build the Y matrix for stacked bars
+        Y = []
+        labels = []
+        colors = []
+        
+        for idx, (color_label, (x_group, y_group)) in enumerate(groups.items()):
+            y_series = []
+            for x in unique_x:
+                # Find the y value for this x and color
+                value = 0
+                for i, xg in enumerate(x_group):
+                    if xg == x:
+                        value = y_group[i]
+                        break
+                y_series.append(value)
+            Y.append(y_series)
+            labels.append(color_label)
+            colors.append(get_color_for_series(idx, len(groups)))
+        
+        # Create stacked bar chart
+        plt.stacked_bar(unique_x, Y, labels=labels, color=colors, width=0.8)
+        plt.show()
+        return
     elif color_values:
         groups = group_by_color(x_values, y_values, color_values)
         group_items = list(groups.items())

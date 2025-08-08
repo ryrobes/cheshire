@@ -28,7 +28,8 @@ import plotext as plt
 from .main import (
     load_config, execute_query, extract_chart_data, 
     render_chart, parse_interval, render_single_series,
-    group_by_color, get_color_for_series, hex_to_rgb
+    group_by_color, get_color_for_series, hex_to_rgb,
+    render_termgraph
 )
 
 
@@ -577,7 +578,7 @@ ORDER BY date"""
             # Use named database
             db_path = db_selection
         
-        cmd = f"./cheshire.py '{query}' {chart_type} {interval}"
+        cmd = f"cheshire '{query}' {chart_type} {interval}"
         
         if title:
             cmd += f" --title '{title}'"
@@ -815,7 +816,7 @@ ORDER BY date"""
                 if chart_type in map_types:
                     # Render map chart
                     try:
-                        from map_renderer import render_map
+                        from .map_renderer import render_map
                         # Get chart container size for optimal resolution
                         try:
                             chart_container = self.query_one("#chart-container")
@@ -854,7 +855,7 @@ ORDER BY date"""
                 if chart_type in termgraph_types:
                     # Render termgraph chart
                     try:
-                        from cheshire import render_termgraph
+                        # render_termgraph is already imported from .main
                         chart_output = render_termgraph(
                             chart_type, x_values, y_values, color_values, 
                             title, default_color, return_string=True
@@ -912,8 +913,7 @@ ORDER BY date"""
             pie_types = ['pie']
             
             if chart_type in map_types or chart_type in matrix_types or chart_type in waffle_types or chart_type in pie_types:
-                # For map charts, use the render_chart function from cheshire which handles maps
-                from cheshire import render_chart
+                # render_chart is already imported from .main
                 
                 # Get chart container size for maps
                 try:

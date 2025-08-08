@@ -1,6 +1,8 @@
 # Cheshire
 
-Terminal-based SQL visualization tool - turn SQL into TUI charts, maps, tables, and more. Analyze your data and browse the results in a builder UI, and then copy and paste the command to use in your shell scripts, etc.
+Simple terminal-based SQL visualization tool - turn SQL into ANSI charts, maps, tables, and more. Analyze your data and browse the results in a builder UI, and then copy and paste the command to use in your shell scripts, etc. Build an easy auto-refreshing dashboard out of TMUX panels, etc. Unhide your data from the terminal.
+
+> “Well! I've often seen a cat without a grin,' thought Alice 'but a grin without a cat! It's the most curious thing i ever saw in my life!”
 
 ## Features
 
@@ -9,13 +11,14 @@ Terminal-based SQL visualization tool - turn SQL into TUI charts, maps, tables, 
 - **SQLite** - Direct database file queries
 - **PostgreSQL** - Via DuckDB postgres_scanner extension
 - **MySQL** - Via DuckDB mysql_scanner extension
-- **osquery** - System statistics as SQL (processes, network, hardware)
+- **Clickhouse** - Via clickhouse_driver
+- **osquery** - System statistics as SQL (processes, network, hardware) **if installed
 - **CSV/TSV Files** - Query delimited files directly with SQL
 - **Parquet Files** - Analyze single files or entire directories
 - **JSON Input** - Pipe JSON arrays directly and query with SQL
 - **Remote Databases** - Connect to external SQL servers
 
-### Rich Visualizations
+### ANSI Visualizations
 - **Charts**: Bar, line, scatter, histogram, pie, waffle, and more
 - **Geographic Maps**: Point maps, heatmaps, density maps, cluster maps
 - **Tables**: Rich formatted tables with colors and styling
@@ -23,31 +26,18 @@ Terminal-based SQL visualization tool - turn SQL into TUI charts, maps, tables, 
 - **Matrix Heatmaps**: 2D data visualization with color gradients
 - **Termgraph Charts**: Alternative chart renderer with calendar heatmaps
 
+### Chart 'Suggestions'
+- **Sniff Database**: Generate a number of basic charts of all kinds based on your data
+- **Browse and Modify**: Look through the suggestions to use or adapt
+
 ### Powerful Features
 - **Interactive TUI**: Browse databases, preview queries, select charts
 - **Live Refresh**: Auto-refresh charts at specified intervals
-- **Smart Analysis**: Auto-detect data types and suggest appropriate charts
+- **Smart Analysis**: Search your database and suggest appropriate charts
 - **Multiple Databases**: Configure and switch between multiple data sources
-- **Color Themes**: Matrix, dark, clear, pro themes for charts
 - **Export Support**: Save visualizations or pipe to other tools
 
 ## Installation
-
-### From Source
-
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/cheshire.git
-cd cheshire
-
-# Install the package
-pip install .
-
-# Or install in development mode
-pip install -e .
-```
-
-### From PyPI (coming soon)
 
 ```bash
 pip install cheshire-sql
@@ -77,7 +67,7 @@ cheshire "SELECT latitude as lat, longitude as lon FROM locations" map --db geo.
 # Query CSV files directly
 cheshire "SELECT * FROM data WHERE sales > 1000" bar --csv sales.csv
 
-# Analyze TSV file and generate suggestions
+# Analyze TSV file and generate suggestions for the TUI to browse
 cheshire --sniff --tsv data.tsv
 
 # Query Parquet files or folders
@@ -163,32 +153,47 @@ chart_defaults:
 
 ## Chart Types
 
-### Basic Charts
-- `bar` - Vertical bar chart
+### Plotext Charts (Default)
+Plotext is the primary charting library, providing colorful ANSI charts:
+- `bar` - Vertical bar chart (automatically stacks when color column provided)
 - `line` - Line chart with optional markers
-- `scatter` - Scatter plot
+- `scatter` - Scatter plot with various marker styles
 - `histogram` - Distribution histogram
-- `pie` - Pie chart with percentages
-- `waffle` - Waffle/square chart
+- `braille` - Braille character scatter plot (high resolution)
+- `box` - Box plot for statistical distributions
+- `simple_bar` - Simplified bar chart
+- `multiple_bar` - Multiple bar series side-by-side
+- `stacked_bar` - Explicitly stacked bar chart
 
-### Geographic Maps
-- `map` - Point map
-- `map_density` - Density heatmap
-- `map_clusters` - Clustered points
-- `map_heatmap` - Geographic heatmap
-- `map_blocks` - Block-based map
+### Custom Implementations
+These are custom-built visualizations unique to Cheshire:
+- `pie` - Pie chart with percentages (custom implementation)
+- `waffle` - Waffle/square chart for proportions (custom implementation)
+- `matrix_heatmap` - 2D matrix visualization with color gradients (custom implementation)
+
+### Geographic Maps (Custom)
+Custom map renderer for geographic data (requires lat/lon columns):
+- `map` or `map_points` - Point map with Braille characters
+- `map_blocks` - Block-based point map
+- `map_density` - Density heatmap overlay
+- `map_clusters` - Clustered point aggregation
+- `map_heatmap` - Geographic heatmap with color gradients
+- `map_blocks_heatmap` - True color block heatmap
 - `map_braille_heatmap` - Braille character heatmap
 
-### Tables and Text
-- `rich_table` - Formatted table with colors
-- `figlet` - Large ASCII art text for KPIs
-- `json` - Raw JSON output of query results
+### Termgraph Charts
+Alternative chart renderer using the termgraph library:
+- `tg_bar` - Horizontal bar chart
+- `tg_hbar` - Horizontal bar variant
+- `tg_multi` - Multi-series bar chart
+- `tg_stacked` - Stacked bar chart
+- `tg_histogram` - Histogram with customizable bins
+- `tg_calendar` - Calendar heatmap for time series data
 
-### Specialized
-- `matrix_heatmap` - 2D matrix visualization
-- `tg_bar` - Termgraph bar chart
-- `tg_calendar` - Calendar heatmap
-- `braille` - Braille scatter plot
+### Tables and Text
+- `rich_table` - Formatted table with colors (uses Rich library)
+- `figlet` - Large ASCII art text for KPIs (uses pyfiglet library)
+- `json` - Raw JSON output of query results (built-in)
 
 ## SQL Query Format
 
@@ -294,8 +299,8 @@ Features:
 - `Tab` - Switch between panels
 - `Enter` - Execute query/select item
 - `Esc` - Exit/cancel
-- `Ctrl+C` - Quit application
-- `F5` - Refresh current view
+- `Ctrl+Q` - Quit application
+- `Ctrl+C` - Copy current chart's CLI
 
 ## Examples
 
