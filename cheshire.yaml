@@ -11,7 +11,7 @@ databases:
         type: sqlite
         path: "./boston-crime-data.db"
 
-default_database: example
+default_database: duckdb
 
 chart_defaults:
   theme: null

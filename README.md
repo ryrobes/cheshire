@@ -4,6 +4,8 @@ Simple terminal-based SQL visualization tool - turn SQL into ANSI charts, maps, 
 
 > “Well! I've often seen a cat without a grin,' thought Alice 'but a grin without a cat! It's the most curious thing i ever saw in my life!”
 
+![Alt text](https://raw.githubusercontent.com/ryrobes/cheshire/refs/heads/main/cheshire_snap1.jpg "We're all mad here.")
+
 ## Features
 
 ### Multiple Data Sources
@@ -36,6 +38,9 @@ Simple terminal-based SQL visualization tool - turn SQL into ANSI charts, maps, 
 - **Smart Analysis**: Search your database and suggest appropriate charts
 - **Multiple Databases**: Configure and switch between multiple data sources
 - **Export Support**: Save visualizations or pipe to other tools
+
+![Alt text](https://raw.githubusercontent.com/ryrobes/cheshire/refs/heads/main/cheshire_snap2.jpg "We're all mad here.")
+(optional interactive CLI builder)
 
 ## Installation
 
@@ -370,17 +375,7 @@ chart_defaults:
   height: 24
 ```
 
-## Dependencies
-
-- Python 3.8+
-- DuckDB - SQL engine and file format support
-- plotext - Terminal plotting library
-- Rich - Terminal formatting and tables
-- Click - Command-line interface
-- PyYAML - Configuration files
-- pyfiglet - ASCII art text
-- termgraph - Alternative chart renderer
-- Additional Python packages in requirements.txt
+![Alt text](https://raw.githubusercontent.com/ryrobes/cheshire/refs/heads/main/cheshire_snap0.jpg "We're all mad here.")
 
 ## License
 
