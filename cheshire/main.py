@@ -349,7 +349,7 @@ def get_color_for_series(index: int, total: int) -> str:
 
 
 def render_rich_table(results: List[Dict[str, Any]], title: Optional[str] = None,
-                      table_color: Optional[str] = None) -> None:
+                      table_color: Optional[str] = None, no_clear: bool = False) -> None:
     """Render query results as a Rich table with all columns."""
     # Get terminal width to use full available space
     try:
@@ -363,7 +363,8 @@ def render_rich_table(results: List[Dict[str, Any]], title: Optional[str] = None
     console = Console(force_terminal=True, color_system="standard", width=terminal_width)
 
     # Clear terminal using ANSI escape sequences (preserves color state)
-    print('\033[2J\033[H', end='', flush=True)
+    if not no_clear:
+        print('\033[2J\033[H', end='', flush=True)
 
     if not results:
         console.print("[dim]No results to display[/dim]")
@@ -437,10 +438,11 @@ def render_rich_table(results: List[Dict[str, Any]], title: Optional[str] = None
     console.print(table)
 
 
-def render_figlet(value: str, title: Optional[str] = None, color: Optional[str] = None, font: str = "ansi_regular") -> None:
+def render_figlet(value: str, title: Optional[str] = None, color: Optional[str] = None, font: str = "ansi_regular", no_clear: bool = False) -> None:
     """Render a large figlet text display for callout values."""
     # Clear terminal using ANSI escape sequences (preserves color state)
-    print('\033[2J\033[H', end='', flush=True)
+    if not no_clear:
+        print('\033[2J\033[H', end='', flush=True)
 
     # Generate figlet text with a very wide width to prevent wrapping
     fig = pyfiglet.Figlet(font=font, width=1000)
@@ -518,7 +520,7 @@ def format_value(value):
 
 def render_termgraph(chart_type: str, x_values: List, y_values: List, 
                     color_values: Optional[List], title: Optional[str] = None,
-                    default_color: Optional[str] = None, return_string: bool = False) -> Optional[str]:
+                    default_color: Optional[str] = None, return_string: bool = False, no_clear: bool = False) -> Optional[str]:
     """Render charts using termgraph library."""
     import io
     import sys
@@ -531,7 +533,8 @@ def render_termgraph(chart_type: str, x_values: List, y_values: List,
         sys.stdout = string_buffer
     else:
         # Clear terminal using ANSI escape sequences (preserves color state)
-        print('\033[2J\033[H', end='', flush=True)
+        if not no_clear:
+            print('\033[2J\033[H', end='', flush=True)
     
     # Print title if provided
     if title:
@@ -746,13 +749,15 @@ def render_termgraph(chart_type: str, x_values: List, y_values: List,
 def render_chart(chart_type: str, x_values: List, y_values: List,
                  color_values: Optional[List], config: Dict[str, Any],
                  default_color: Optional[str] = None, title: Optional[str] = None,
-                 font: Optional[str] = None, results: Optional[List[Dict[str, Any]]] = None) -> None:
+                 font: Optional[str] = None, results: Optional[List[Dict[str, Any]]] = None,
+                 no_clear: bool = False) -> None:
     """Render chart using plotext, termgraph, or map renderer based on chart type."""
     # Check if this is JSON output type
     if chart_type == 'json':
         import json
         # Clear terminal
-        print('\033[2J\033[H', end='', flush=True)
+        if not no_clear:
+            print('\033[2J\033[H', end='', flush=True)
         if title:
             print(f"# {title}\n")
         # Output formatted JSON of the results
@@ -776,7 +781,7 @@ def render_chart(chart_type: str, x_values: List, y_values: List,
     # Check if this is a map chart type
     map_types = ['map', 'map_points', 'map_density', 'map_clusters', 'map_heatmap', 'map_blocks', 'map_blocks_heatmap', 'map_braille_heatmap']
     if chart_type in map_types:
-        render_map_chart(chart_type, x_values, y_values, color_values, title, results, config)
+        render_map_chart(chart_type, x_values, y_values, color_values, title, results, config, no_clear)
         return
     
     # Check if this is a pie chart  
@@ -856,14 +861,14 @@ def render_chart(chart_type: str, x_values: List, y_values: List,
     # Check if this is a termgraph chart type
     termgraph_types = ['tg_bar', 'tg_hbar', 'tg_multi', 'tg_stacked', 'tg_histogram', 'tg_calendar']
     if chart_type in termgraph_types:
-        render_termgraph(chart_type, x_values, y_values, color_values, title, default_color)
+        render_termgraph(chart_type, x_values, y_values, color_values, title, default_color, no_clear=no_clear)
         return
     
     # Special handling for rich_table type
     if chart_type == 'rich_table':
         # For rich table, we need the full results, not just x/y/color
         if results:
-            render_rich_table(results, title, default_color)
+            render_rich_table(results, title, default_color, no_clear=no_clear)
         else:
             # Fallback to reconstructing from x/y/color if results not provided
             reconstructed = []
@@ -872,7 +877,7 @@ def render_chart(chart_type: str, x_values: List, y_values: List,
                 if color_values and i < len(color_values):
                     row['color'] = color_values[i]
                 reconstructed.append(row)
-            render_rich_table(reconstructed, title, default_color)
+            render_rich_table(reconstructed, title, default_color, no_clear=no_clear)
         return
 
     # Special handling for figlet type
@@ -893,12 +898,13 @@ def render_chart(chart_type: str, x_values: List, y_values: List,
             # elif len(str(value)) > 15:
             #     font = "mini"
 
-        render_figlet(format_value(value), title, default_color, font)
+        render_figlet(format_value(value), title, default_color, font, no_clear=no_clear)
         return
 
     # Regular chart rendering
     # Use ANSI escape sequences instead of plt.clear_terminal() to preserve color state
-    print('\033[2J\033[H', end='', flush=True)
+    if not no_clear:
+        print('\033[2J\033[H', end='', flush=True)
     plt.clear_data()
     plt.clear_figure()
 
@@ -921,11 +927,10 @@ def render_chart(chart_type: str, x_values: List, y_values: List,
     if title:
         plt.title(title)
 
-    # For bar charts with colors where x equals color, we want individual colored bars
-    if color_values and chart_type in ['bar', 'simple_bar'] and len(set(zip(x_values, color_values))) == len(x_values):
-        # Each x value has its own color
-        # Plot as a simple bar chart without individual colors (plotext limitation)
-        # The legend will show via labels
+    # Skip the stacked bar logic if x and color are the same (redundant coloring)
+    # This happens when user selects the same column for x-axis and color
+    if color_values and chart_type in ['bar', 'simple_bar'] and x_values == color_values:
+        # Each x value IS its own color - redundant, just do simple bar
         plt.bar(x_values, y_values)
         plt.show()
         return
@@ -1109,10 +1114,11 @@ def render_matrix_heatmap_chart(results: Optional[List[Dict[str, Any]]], title: 
 def render_map_chart(chart_type: str, lons: List, lats: List,
                      color_values: Optional[List], title: Optional[str],
                      results: Optional[List[Dict[str, Any]]] = None,
-                     config: Optional[Dict[str, Any]] = None) -> None:
+                     config: Optional[Dict[str, Any]] = None, no_clear: bool = False) -> None:
     """Render geographic data as a map."""
     # Clear terminal using ANSI escape sequences
-    print('\033[2J\033[H', end='', flush=True)
+    if not no_clear:
+        print('\033[2J\033[H', end='', flush=True)
     
     # Determine map visualization type
     if chart_type == 'map_density':
@@ -1196,7 +1202,8 @@ def parse_interval(interval: str) -> float:
 def refresh_loop(query: str, chart_type: str, db_identifier: Any,
                  interval_seconds: float, config: Dict[str, Any],
                  default_color: Optional[str] = None, title: Optional[str] = None,
-                 font: Optional[str] = None, json_data: Optional[List[Dict]] = None) -> None:
+                 font: Optional[str] = None, json_data: Optional[List[Dict]] = None,
+                 no_clear: bool = False) -> None:
     """Main refresh loop for updating charts."""
     stop_event = threading.Event()
 
@@ -1227,20 +1234,22 @@ def refresh_loop(query: str, chart_type: str, db_identifier: Any,
                 x_values, y_values, color_values = extract_chart_data(results)
                 # Pass full results for rich_table
                 render_chart(chart_type, x_values, y_values, color_values, config,
-                             default_color, title, font, results=results)
+                             default_color, title, font, results=results, no_clear=no_clear)
 
                 if interval_seconds <= 0:
                     break
 
                 stop_event.wait(interval_seconds)
             except Exception as e:
-                print('\033[2J\033[H', end='', flush=True)
+                if not no_clear:
+                    print('\033[2J\033[H', end='', flush=True)
                 print(f"Error: {e}")
                 if interval_seconds <= 0:
                     break
                 stop_event.wait(interval_seconds)
     except KeyboardInterrupt:
-        print('\033[2J\033[H', end='', flush=True)
+        if not no_clear:
+            print('\033[2J\033[H', end='', flush=True)
         print("\nExiting...")
     finally:
         if json_conn:
@@ -1277,8 +1286,9 @@ class CheshireCommand(click.Command):
 @click.option('--json-input', is_flag=True, help='Read JSON array from stdin and load as table "data"')
 @click.option('--width', help='Chart width in characters (e.g., 60) or percentage of terminal (e.g., "80%")')
 @click.option('--height', help='Chart height in lines (e.g., 20) or percentage of terminal (e.g., "50%")')
+@click.option('--no-clear', is_flag=True, help='Do not clear terminal before rendering (useful for scripts/logs)')
 @click.option('--version', is_flag=True, is_eager=True, expose_value=False, callback=lambda ctx, param, value: (display_logo(), click.echo("cheshire, version 0.1.0"), ctx.exit()) if value else None, help='Show the version and exit.')
-def main(query: Optional[str], chart_type: str, interval: str, db: Optional[str], database: Optional[str], config: str, color: Optional[str], theme: Optional[str], title: Optional[str], font: Optional[str], list_databases: bool, sniff: bool, csv: Optional[str], tsv: Optional[str], parquet: Optional[str], http: Optional[str], json_input: bool, width: Optional[str], height: Optional[str]):
+def main(query: Optional[str], chart_type: str, interval: str, db: Optional[str], database: Optional[str], config: str, color: Optional[str], theme: Optional[str], title: Optional[str], font: Optional[str], list_databases: bool, sniff: bool, csv: Optional[str], tsv: Optional[str], parquet: Optional[str], http: Optional[str], json_input: bool, width: Optional[str], height: Optional[str], no_clear: bool):
     """Terminal-based SQL visualization tool.
 
     QUERY: SQL query to execute (must select 'x', 'y', and optionally 'color' columns)
@@ -1607,7 +1617,7 @@ def main(query: Optional[str], chart_type: str, interval: str, db: Optional[str]
 
     try:
         interval_seconds = parse_interval(interval)
-        refresh_loop(query, chart_type, db_identifier, interval_seconds, config_data, default_color, title, font, json_data=json_data if json_loaded else None)
+        refresh_loop(query, chart_type, db_identifier, interval_seconds, config_data, default_color, title, font, json_data=json_data if json_loaded else None, no_clear=no_clear)
     except Exception as e:
         error_str = str(e)
         print(f"Error: {error_str}")

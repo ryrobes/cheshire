@@ -346,6 +346,21 @@ cheshire "SELECT ..." line --color "#FF5733"
 cheshire "SELECT ..." scatter --theme matrix
 ```
 
+### Script-Friendly Output
+```bash
+# Don't clear terminal before rendering (useful for scripts/logs)
+cheshire "SELECT ..." bar --no-clear
+
+# Capture output in scripts without terminal clearing
+echo "=== Sales Report ===" >> report.log
+cheshire "SELECT product as x, SUM(sales) as y FROM data GROUP BY 1" bar --no-clear >> report.log
+
+# Build dashboards with multiple charts
+cheshire "SELECT ..." pie --no-clear
+cheshire "SELECT ..." bar --no-clear
+cheshire "SELECT ..." line --no-clear
+```
+
 ## Interactive TUI Mode
 
 Launch without arguments to enter the interactive TUI:
