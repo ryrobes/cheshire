@@ -46,7 +46,7 @@ Simple terminal-based SQL visualization tool - turn SQL into ANSI charts, maps, 
 ## Installation
 
 ```bash
-pip install cheshire-sql
+pip install cheshire-sql==0.1.1
 ```
 
 ## Quick Start
@@ -100,10 +100,6 @@ cheshire --sniff --http "https://raw.githubusercontent.com/mwaskom/seaborn-data/
 cheshire "SELECT payment_type as x, AVG(total_amount) as y FROM data GROUP BY payment_type" bar \
   --http "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2024-01.parquet" \
   --title "Average Fare by Payment Type"
-
-# Live COVID-19 data from Our World in Data (CSV)
-cheshire "SELECT location as x, MAX(total_cases) as y FROM data WHERE continent='Europe' GROUP BY location ORDER BY y DESC LIMIT 10" bar \
-  --http "https://covid.ourworldindata.org/data/owid-covid-data.csv"
 ```
 
 ### Demo Datasets
@@ -117,7 +113,6 @@ Here are some publicly available datasets perfect for testing Cheshire:
 #### CSV Files
 - **Iris Dataset**: `https://raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv`
 - **Titanic Dataset**: `https://raw.githubusercontent.com/mwaskom/seaborn-data/master/titanic.csv`
-- **COVID-19 Data**: `https://covid.ourworldindata.org/data/owid-covid-data.csv`
 - **Flights Dataset**: `https://raw.githubusercontent.com/mwaskom/seaborn-data/master/flights.csv`
 - **Tips Dataset**: `https://raw.githubusercontent.com/mwaskom/seaborn-data/master/tips.csv`
 
