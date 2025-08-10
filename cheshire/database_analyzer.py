@@ -401,6 +401,63 @@ class DatabaseAnalyzer:
                 continue
         return None
     
+    def _build_cli_command(self, rec: Dict[str, Any]) -> str:
+        """Build the CLI command for a recommendation"""
+        import re
+        
+        # Escape single quotes in SQL and replace newlines/extra spaces
+        sql = rec.get('sql', '')
+        sql = sql.strip().replace("\n", " ").replace("'", "'\\''")
+        sql = re.sub(r'\s+', ' ', sql)
+        
+        chart_type = rec.get('chart_type', 'bar')
+        title = rec.get('title', '')
+        
+        # Start building command
+        cmd = f"cheshire '{sql}' {chart_type} 0"
+        
+        # Add title if present
+        if title:
+            # Escape single quotes in title
+            title_escaped = title.replace("'", "'\\''")
+            cmd += f" --title '{title_escaped}'"
+        
+        # Determine database parameter
+        if self.db_name:
+            # Named database from config
+            cmd += f" --database '{self.db_name}'"
+        elif isinstance(self.db_config, str):
+            # Database file path or URL
+            if self.db_config.startswith('http://') or self.db_config.startswith('https://'):
+                # HTTP URL - extract from the SQL if it contains read_parquet/read_csv_auto
+                url_match = re.search(r"read_(?:parquet|csv_auto|json_auto)\('(https?://[^']+)'\)", sql)
+                if url_match:
+                    url = url_match.group(1)
+                    # Modify query to use 'data' as table alias
+                    sql_modified = sql.replace(url_match.group(0), 'data')
+                    # Rebuild command with modified query
+                    sql_escaped = sql_modified.strip().replace("'", "'\\''")
+                    cmd = f"cheshire '{sql_escaped}' {chart_type} 0"
+                    if title:
+                        title_escaped = title.replace("'", "'\\''")
+                        cmd += f" --title '{title_escaped}'"
+                    cmd += f" --http '{url}'"
+                else:
+                    # Fallback to file path
+                    cmd += f" --db '{self.db_config}'"
+            elif self.db_config != ':memory:':
+                # Regular file path
+                cmd += f" --db '{self.db_config}'"
+            # else: memory database is default, no need to specify
+        elif isinstance(self.db_config, dict):
+            # Complex database config - use path if available
+            if 'path' in self.db_config:
+                cmd += f" --db '{self.db_config['path']}'"
+            # For other database types, we might need special handling
+            # but for now, let's just use the default
+        
+        return cmd
+    
     def _generate_recommendations(self) -> None:
         """Generate chart recommendations for each table"""
         for table_name, table_analysis in self.analysis_results.items():
@@ -1121,6 +1178,10 @@ class DatabaseAnalyzer:
                             'score': 0.8
                         })
             
+            # Add CLI command to each recommendation
+            for rec in recommendations:
+                rec['command'] = self._build_cli_command(rec)
+            
             # Sort by score and save
             recommendations.sort(key=lambda x: x['score'], reverse=True)
             table_analysis.recommended_charts = recommendations
@@ -1540,6 +1601,11 @@ def analyze_csv_tsv_file(file_path: str, file_type: str = 'csv', output_path: Op
         # Generate chart recommendations
         print("\n📊 Generating chart recommendations...")
         recommendations = generate_csv_recommendations(table_analysis, from_clause)
+        
+        # Add CLI commands to each recommendation
+        for rec in recommendations:
+            rec['command'] = _build_standalone_cli_command(rec, abs_path)
+        
         table_analysis.recommended_charts = recommendations
         
         # Prepare results for saving
@@ -1569,6 +1635,44 @@ def analyze_csv_tsv_file(file_path: str, file_type: str = 'csv', output_path: Op
         
     finally:
         conn.close()
+
+
+def _build_standalone_cli_command(rec: Dict[str, Any], file_path: str = None) -> str:
+    """Build CLI command for standalone file analysis (CSV/Parquet)
+    
+    Args:
+        rec: Recommendation dictionary
+        file_path: Path to the file being analyzed
+    
+    Returns:
+        CLI command string
+    """
+    import re
+    
+    # Escape single quotes in SQL and replace newlines/extra spaces
+    sql = rec.get('sql', '')
+    sql = sql.strip().replace("\n", " ").replace("'", "'\\''")
+    sql = re.sub(r'\s+', ' ', sql)
+    
+    chart_type = rec.get('chart_type', 'bar')
+    title = rec.get('title', '')
+    
+    # Start building command
+    cmd = f"cheshire '{sql}' {chart_type} 0"
+    
+    # Add title if present
+    if title:
+        # Escape single quotes in title
+        title_escaped = title.replace("'", "'\\''")
+        cmd += f" --title '{title_escaped}'"
+    
+    # Add database/file parameter if we have a file path
+    if file_path and file_path != ':memory:':
+        # Escape single quotes in path
+        path_escaped = file_path.replace("'", "'\\''")
+        cmd += f" --db '{path_escaped}'"
+    
+    return cmd
 
 
 def generate_csv_recommendations(table: TableAnalysis, from_clause: str) -> List[Dict[str, Any]]:
@@ -1859,6 +1963,12 @@ def analyze_parquet_file(path: str, output_path: Optional[str] = None) -> None:
         # Generate chart recommendations
         print("\n📊 Generating chart recommendations...")
         recommendations = generate_parquet_recommendations(table_analysis, from_clause)
+        
+        # Add CLI commands to each recommendation
+        # Use the original path for the command (not abs_path) for better usability
+        for rec in recommendations:
+            rec['command'] = _build_standalone_cli_command(rec, path)
+        
         table_analysis.recommended_charts = recommendations
         
         # Prepare results
