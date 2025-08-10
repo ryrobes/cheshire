@@ -46,7 +46,7 @@ Simple terminal-based SQL visualization tool - turn SQL into ANSI charts, maps, 
 ## Installation
 
 ```bash
-pip install cheshire-sql==0.1.1
+pip install cheshire-sql==0.1.2
 ```
 
 ## Quick Start
